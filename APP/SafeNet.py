@@ -4,6 +4,8 @@ import sqlite3
 from datetime import datetime
 import random
 
+
+
 # ================= APP =================
 app = Tk()
 app.title("SafeNET")
@@ -17,10 +19,12 @@ TEXT = "#222"
 
 app.configure(bg=BG)
 
+
 # ================= DB =================
 conn = sqlite3.connect("safenet.db")
 c = conn.cursor()
 
+# Tables principales
 c.execute("""CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user TEXT,
@@ -36,12 +40,15 @@ c.execute("""CREATE TABLE IF NOT EXISTS comments (
     text TEXT
 )""")
 
-c.execute("""CREATE TABLE IF NOT EXISTS users (
+# Table users - version propre
+c.execute("DROP TABLE IF EXISTS users")   # ← Supprime l'ancienne version
+c.execute("""CREATE TABLE users (
     username TEXT PRIMARY KEY,
     bio TEXT,
     created_at TEXT
 )""")
 
+print("Base de données initialisée correctement.")
 conn.commit()
 
 # ================= USER =================
@@ -49,22 +56,29 @@ user = "Anonyme"
 
 def set_user():
     global user
-    user = name_entry.get() or "Anonyme"
+    user = name_entry.get().strip() or "Anonyme"
 
-    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?, ?)",
-              (user, "Salut 👋", datetime.now().strftime("%Y-%m-%d")))
+
+
+
+
+    c.execute("""
+        INSERT OR IGNORE INTO users (username, bio, created_at)
+        VALUES (?, ?, ?)
+    """, (user, "Salut 👋", datetime.now().strftime("%Y-%m-%d")))
     conn.commit()
-
     messagebox.showinfo("SafeNET", f"Connecté : {user}")
 
 # ================= BUTTON =================
 def btn(p, t, cmd):
-    b = Button(p, text=t, command=cmd,
-               bg="white", fg="#222",
-               relief="flat", bd=0,
-               padx=14, pady=8,
-               font=("Segoe UI", 10, "bold"),
-               cursor="hand2")
+    b = Button(
+        p, text=t, command=cmd,
+        bg="white", fg="#222",
+        relief="flat", bd=0,
+        padx=14, pady=8,
+        font=("Segoe UI", 10, "bold"),
+        cursor="hand2"
+    )
     b.bind("<Enter>", lambda e: b.config(bg="#eaeaea"))
     b.bind("<Leave>", lambda e: b.config(bg="white"))
     return b
@@ -90,10 +104,15 @@ def bot_loop():
         for n, d in bots.items():
             if random.random() < d["rate"]:
                 if random.random() < 0.5:
-                    c.execute("UPDATE posts SET likes = likes + 1 WHERE id=?", (pid,))
+                    c.execute(
+                        "UPDATE posts SET likes = likes + 1 WHERE id=?",
+                        (pid,)
+                    )
                 else:
-                    c.execute("INSERT INTO comments VALUES (NULL, ?, ?, ?)",
-                              (pid, n, random.choice(d["style"])))
+                    c.execute("""
+                        INSERT INTO comments (post_id, user, text)
+                        VALUES (?, ?, ?)
+                    """, (pid, n, random.choice(d["style"])))
 
     conn.commit()
     refresh_feed()
@@ -107,8 +126,8 @@ def open_profile(u):
         w.destroy()
 
     c.execute("SELECT bio FROM users WHERE username=?", (u,))
-    bio = c.fetchone()
-    bio = bio[0] if bio else "Pas de bio"
+    result = c.fetchone()
+    bio = result[0] if result and result[0] else "Pas de bio"
 
     c.execute("SELECT COUNT(*) FROM posts WHERE user=?", (u,))
     posts = c.fetchone()[0]
@@ -125,7 +144,7 @@ def open_profile(u):
 
     btn(profil_frame, "⬅ Retour", lambda: show(accueil)).pack(pady=20)
 
-# ================= NAVBAR (FIXED) =================
+# ================= NAVBAR =================
 nav = Frame(app, bg="white", height=70)
 nav.pack(fill="x", side=TOP)
 
@@ -168,7 +187,7 @@ canvas.configure(yscrollcommand=scroll.set)
 canvas.pack(side=LEFT, fill="both", expand=True)
 scroll.pack(side=RIGHT, fill="y")
 
-# ================= FEED =================
+# ================= FEED REFRESH =================
 def refresh_feed():
     for w in feed.winfo_children():
         w.destroy()
@@ -207,17 +226,18 @@ def refresh_feed():
 
         def add(p=pid, e=entry):
             if e.get().strip():
-                c.execute("INSERT INTO comments VALUES (NULL, ?, ?, ?)",
-                          (p, user, e.get()))
+                c.execute("""
+                    INSERT INTO comments (post_id, user, text)
+                    VALUES (?, ?, ?)
+                """, (p, user, e.get()))
                 conn.commit()
                 refresh_feed()
 
         Button(box, text="💬", command=add).pack(side=LEFT)
 
-        # CLICK PROFILE
         box.bind("<Button-1>", lambda e, name=u: open_profile(name))
 
-# ================= CREATE =================
+# ================= CREATE POST =================
 Label(creer, text="Créer un post",
       bg=BG, fg="white",
       font=("Segoe UI", 26, "bold")).pack(pady=50)
@@ -227,8 +247,11 @@ entry_post.pack()
 
 def publish():
     if entry_post.get().strip():
-        c.execute("INSERT INTO posts VALUES (NULL, ?, ?, 0, ?)",
-                  (user, entry_post.get(), datetime.now().strftime("%H:%M")))
+        c.execute("""
+            INSERT INTO posts (user, text, likes, time)
+            VALUES (?, ?, 0, ?)
+        """, (user, entry_post.get(), datetime.now().strftime("%H:%M")))
+
         conn.commit()
         entry_post.delete(0, END)
         show(accueil)
